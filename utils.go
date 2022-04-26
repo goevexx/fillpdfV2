@@ -16,7 +16,7 @@
  *  limitations under the License.
  */
 
-package fillpdf
+package fillpdfV2
 
 import (
 	"bytes"
