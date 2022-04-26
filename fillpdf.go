@@ -16,7 +16,7 @@
  *  limitations under the License.
  */
 
-package fillpdf
+package fillpdfV2
 
 import (
 	"bufio"
@@ -26,6 +26,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"golang.org/x/text/encoding/charmap"
 )
 
 // Form represents the PDF form.
@@ -34,7 +36,7 @@ type Form map[string]interface{}
 
 // Fill a PDF form with the specified form values and create a final filled PDF file.
 // One variadic boolean specifies, whenever to overwrite the destination file if it exists.
-func Fill(form Form, formPDFFile, destPDFFile string, overwrite ...bool) (err error) {
+func Fill(form Form, formPDFFile, destPDFFile string, ansi bool, overwrite ...bool) (err error) {
 	// Get the absolute paths.
 	formPDFFile, err = filepath.Abs(formPDFFile)
 	if err != nil {
@@ -79,7 +81,7 @@ func Fill(form Form, formPDFFile, destPDFFile string, overwrite ...bool) (err er
 
 	// Create the fdf data file.
 	fdfFile := filepath.Clean(tmpDir + "/data.fdf")
-	err = createFdfFile(form, fdfFile)
+	err = createFdfFile(form, fdfFile, ansi)
 	if err != nil {
 		return fmt.Errorf("failed to create fdf form data file: %v", err)
 	}
@@ -122,7 +124,19 @@ func Fill(form Form, formPDFFile, destPDFFile string, overwrite ...bool) (err er
 	return nil
 }
 
-func createFdfFile(form Form, path string) error {
+func decodeWindows1250(enc []byte) string {
+	dec := charmap.Windows1250.NewDecoder()
+	out, _ := dec.Bytes(enc)
+	return string(out)
+}
+
+func encodeWindows1250(inp string) []byte {
+	enc := charmap.Windows1252.NewEncoder()
+	out, _ := enc.String(inp)
+	return []byte(out)
+}
+
+func createFdfFile(form Form, path string, ansi bool) error {
 	// Create the file.
 	file, err := os.Create(path)
 	if err != nil {
@@ -134,15 +148,28 @@ func createFdfFile(form Form, path string) error {
 	w := bufio.NewWriter(file)
 
 	// Write the fdf header.
-	fmt.Fprintln(w, fdfHeader)
+	if ansi {
+		w.Write(encodeWindows1250(fdfHeader))
+	} else {
+		w.Write([]byte(fdfHeader))
+	}
 
 	// Write the form data.
 	for key, value := range form {
-		fmt.Fprintf(w, "<< /T (%s) /V (%v)>>\n", key, value)
+		fdfContent := fmt.Sprintf("<< /T (%s) /V (%v)>>\n", key, value)
+		if ansi {
+			w.Write(encodeWindows1250(fdfContent))
+		} else {
+			w.Write([]byte(fdfContent))
+		}
 	}
 
 	// Write the fdf footer.
-	fmt.Fprintln(w, fdfFooter)
+	if ansi {
+		w.Write(encodeWindows1250(fdfFooter))
+	} else {
+		w.Write([]byte(fdfFooter))
+	}
 
 	// Flush everything.
 	return w.Flush()
